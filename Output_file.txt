@@ -1,0 +1,123 @@
+================================================================================
+SETTING UP ENVIRONMENT
+================================================================================
+
+Downloading NLTK data...
+✓ punkt_tab
+✓ punkt
+✓ stopwords
+✓ averaged_perceptron_tagger
+
+✓ NLTK setup complete!
+================================================================================
+
+✓ All libraries imported successfully!
+
+================================================================================
+UPLOAD YOUR DATA FILES
+================================================================================
+
+Please upload twitter_training.csv and twitter_validation.csv
+
+
+================================================================================
+DEFINING SENTIMENT ANALYSIS MODEL
+================================================================================
+✓ Model class defined!
+
+================================================================================
+LOADING DATA
+================================================================================
+
+✓ Training samples: 60981
+✓ Validation samples: 828
+
+Training distribution:
+sentiment
+Negative    22312
+Positive    20618
+Neutral     18051
+Name: count, dtype: int64
+
+================================================================================
+TRAINING MODEL
+================================================================================
+
+Building vocabulary...
+✓ Vocabulary size: 105946
+Training model...
+✓ Positive words: 350854
+✓ Negative words: 432998
+✓ Neutral words: 389004
+✓ Training completed!
+
+================================================================================
+VALIDATION
+================================================================================
+
+Validating model...
+
+--- Sample 1 ---
+Text: BBC News - Amazon boss Jeff Bezos rejects claims company acted like a 'drug dealer' bbc.co.uk/news/a...
+True: Neutral | Predicted: Neutral
+
+--- Sample 2 ---
+Text: @Microsoft Why do I pay for WORD when it functions so poorly on my @SamsungUS Chromebook? 🙄...
+True: Negative | Predicted: Negative
+
+--- Sample 3 ---
+Text: CSGO matchmaking is so full of closet hacking, it's a truly awful game....
+True: Negative | Predicted: Negative
+
+--- Sample 4 ---
+Text: Now the President is slapping Americans in the face that he really did commit an unlawful act after ...
+True: Neutral | Predicted: Neutral
+
+--- Sample 5 ---
+Text: Hi @EAHelp I’ve had Madeleine McCann in my cellar for the past 13 years and the little sneaky thing ...
+True: Negative | Predicted: Negative
+
+================================================================================
+RESULTS
+================================================================================
+
+📊 Accuracy: 0.9626 (96.26%)
+📊 Precision: 0.9629
+📊 Recall: 0.9626
+📊 F1-Score: 0.9626
+
+--------------------------------------------------------------------------------
+Sentiment       Precision    Recall       F1           Support   
+--------------------------------------------------------------------------------
+Positive        0.9404       0.9675       0.9537       277       
+Negative        0.9697       0.9624       0.9660       266       
+Neutral         0.9785       0.9579       0.9681       285       
+--------------------------------------------------------------------------------
+
+================================================================================
+CONFUSION MATRIX
+================================================================================
+
+
+================================================================================
+TESTING CUSTOM EXAMPLES
+================================================================================
+
+'I love this product! It's amazing!'
+→ Positive
+
+'This is terrible. Worst ever.'
+→ Negative
+
+'It's okay, nothing special.'
+→ Negative
+
+'Super happy and excited!'
+→ Positive
+
+'Very disappointed and frustrated.'
+→ Negative
+
+================================================================================
+✓ COMPLETE! Your model is ready to use.
+================================================================================
