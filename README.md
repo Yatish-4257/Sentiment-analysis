@@ -23,11 +23,7 @@ Validation Results:
 
  F1-Score: 0.9626
 
-# Per-Class Performance
-Sentiment	Precision	Recall	F1-Score	Support
-Positive	0.9404	0.9675	0.9537	277
-Negative	0.9697	0.9624	0.9660	266
-Neutral	0.9785	0.9579	0.9681	285
+
 
 ✔ Very strong balanced performance across all classes
 ✔ Minimal misclassification
