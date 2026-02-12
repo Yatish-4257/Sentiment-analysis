@@ -1,0 +1,389 @@
+# ============================================================================
+# COMPLETE GOOGLE COLAB SOLUTION
+# ============================================================================
+
+# STEP 1: Setup and Downloads
+# ============================================================================
+print("="*80)
+print("SETTING UP ENVIRONMENT")
+print("="*80)
+
+import nltk
+import ssl
+
+# Handle SSL issues
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+# Download NLTK data with error handling
+print("\nDownloading NLTK data...")
+downloads = ['punkt_tab', 'punkt', 'stopwords', 'averaged_perceptron_tagger']
+for item in downloads:
+    try:
+        nltk.download(item, quiet=True)
+        print(f"✓ {item}")
+    except Exception as e:
+        print(f"{item}: {str(e)[:50]}")
+
+print("\n✓ NLTK setup complete!")
+print("="*80)
+
+# STEP 2: Import Libraries
+# ============================================================================
+import math
+import pandas as pd
+import numpy as np
+from collections import defaultdict
+from nltk.tokenize import word_tokenize
+from nltk.stem import PorterStemmer
+from nltk.corpus import stopwords
+import re
+from sklearn.metrics import (accuracy_score, precision_recall_fscore_support, 
+                             confusion_matrix, classification_report)
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+print("\n✓ All libraries imported successfully!")
+
+# STEP 3: Upload Files
+# ============================================================================
+from google.colab import files
+import os
+
+print("\n" + "="*80)
+print("UPLOAD YOUR DATA FILES")
+print("="*80)
+print("\nPlease upload twitter_training.csv and twitter_validation.csv\n")
+
+# # Check if files already exist
+# if not (os.path.exists('twitter_training.csv') and os.path.exists('twitter_validation.csv')):
+#     uploaded = files.upload()
+#     print("\n✓ Files uploaded successfully!")
+# else:
+#     print("✓ Files already present!")
+
+# STEP 4: Define Model
+# ============================================================================
+print("\n" + "="*80)
+print("DEFINING SENTIMENT ANALYSIS MODEL")
+print("="*80)
+
+class SentimentAnalysisModel:
+    def __init__(self, use_bigrams=True, min_word_freq=2):
+        self.log_likelihood_positive = {}
+        self.log_likelihood_negative = {}
+        self.log_likelihood_neutral = {}
+        self.log_prior_positive = 0
+        self.log_prior_negative = 0
+        self.log_prior_neutral = 0
+        self.stemmer = PorterStemmer()
+        
+        # Handle stopwords with error handling
+        try:
+            self.stopwords = set(stopwords.words("english"))
+        except LookupError:
+            print("⚠ Downloading stopwords...")
+            nltk.download('stopwords')
+            self.stopwords = set(stopwords.words("english"))
+            
+        self.use_bigrams = use_bigrams
+        self.min_word_freq = min_word_freq
+        self.vocabulary = set()
+
+    def preprocess_text(self, text):
+        if not isinstance(text, str):
+            return ""
+        
+        text = text.lower()
+        text = re.sub(r'http\S+|www\S+|https\S+', '', text)
+        text = re.sub(r'@\w+', '', text)
+        text = re.sub(r'#', '', text)
+        text = re.sub(r"n't", " not", text)
+        text = re.sub(r'[^\w\s!?]', ' ', text)
+        text = re.sub(r'(.)\1{2,}', r'\1\1', text)
+        
+        return text
+
+    def tokenize(self, text):
+        if not isinstance(text, str):
+            return []
+        
+        text = self.preprocess_text(text)
+        
+        # Tokenize with error handling
+        try:
+            tokens = word_tokenize(text)
+        except LookupError:
+            print("⚠ Downloading punkt tokenizer...")
+            try:
+                nltk.download('punkt_tab')
+            except:
+                nltk.download('punkt')
+            tokens = word_tokenize(text)
+        
+        processed_tokens = []
+        for token in tokens:
+            if token in ['not', 'no', 'never', 'neither', 'nobody', 'nothing']:
+                processed_tokens.append(token)
+            elif token not in self.stopwords and len(token) > 1:
+                stemmed = self.stemmer.stem(token)
+                processed_tokens.append(stemmed)
+        
+        if self.use_bigrams and len(processed_tokens) > 1:
+            bigrams = [f"{processed_tokens[i]}_{processed_tokens[i+1]}" 
+                      for i in range(len(processed_tokens)-1)]
+            processed_tokens.extend(bigrams)
+        
+        return processed_tokens
+
+    def build_vocabulary(self, training_data):
+        word_freq = defaultdict(int)
+        
+        for _, row in training_data.iterrows():
+            tokens = self.tokenize(row['text'])
+            for token in tokens:
+                word_freq[token] += 1
+        
+        self.vocabulary = {word for word, freq in word_freq.items() 
+                          if freq >= self.min_word_freq}
+
+    def train(self, training_data):
+        print("\nBuilding vocabulary...")
+        self.build_vocabulary(training_data)
+        print(f"✓ Vocabulary size: {len(self.vocabulary)}")
+        
+        word_count_positive = defaultdict(int)
+        word_count_negative = defaultdict(int)
+        word_count_neutral = defaultdict(int)
+
+        print("Training model...")
+        for _, row in training_data.iterrows():
+            sentiment = row['sentiment']
+            text = row['text']
+            tokens = self.tokenize(text)
+            tokens = [t for t in tokens if t in self.vocabulary]
+            
+            if sentiment == 'Positive':
+                for token in tokens:
+                    word_count_positive[token] += 1
+            elif sentiment == 'Negative':
+                for token in tokens:
+                    word_count_negative[token] += 1
+            elif sentiment == 'Neutral':
+                for token in tokens:
+                    word_count_neutral[token] += 1
+
+        sum_p = sum(word_count_positive.values())
+        sum_n = sum(word_count_negative.values())
+        sum_neu = sum(word_count_neutral.values())
+        
+        print(f"✓ Positive words: {sum_p}")
+        print(f"✓ Negative words: {sum_n}")
+        print(f"✓ Neutral words: {sum_neu}")
+        
+        vocab_size = len(self.vocabulary)
+        self.log_likelihood_positive = self.calculate_log_likelihood(
+            word_count_positive, sum_p, vocab_size)
+        self.log_likelihood_negative = self.calculate_log_likelihood(
+            word_count_negative, sum_n, vocab_size)
+        self.log_likelihood_neutral = self.calculate_log_likelihood(
+            word_count_neutral, sum_neu, vocab_size)
+        
+        self.log_prior_positive = self.calculate_log_prior('Positive', training_data)
+        self.log_prior_negative = self.calculate_log_prior('Negative', training_data)
+        self.log_prior_neutral = self.calculate_log_prior('Neutral', training_data)
+        
+        print("✓ Training completed!")
+
+    def calculate_log_likelihood(self, word_count, total_words, vocab_size, laplacian_smoothing=1):
+        log_likelihood = {}
+        for word in self.vocabulary:
+            count = word_count.get(word, 0)
+            log_likelihood[word] = math.log(
+                (count + laplacian_smoothing) / (total_words + laplacian_smoothing * vocab_size)
+            )
+        return log_likelihood
+
+    def calculate_log_prior(self, sentiment, data):
+        count_sentiment = len(data[data['sentiment'] == sentiment])
+        total_count = len(data)
+        return math.log(count_sentiment / total_count)
+
+    def predict(self, tweet):
+        tokens = self.tokenize(tweet)
+        tokens = [t for t in tokens if t in self.vocabulary]
+        
+        log_score_positive = self.log_prior_positive
+        log_score_negative = self.log_prior_negative
+        log_score_neutral = self.log_prior_neutral
+        
+        for token in tokens:
+            log_score_positive += self.log_likelihood_positive.get(token, 0)
+            log_score_negative += self.log_likelihood_negative.get(token, 0)
+            log_score_neutral += self.log_likelihood_neutral.get(token, 0)
+        
+        sentiment_scores = {
+            'Positive': log_score_positive,
+            'Negative': log_score_negative,
+            'Neutral': log_score_neutral
+        }
+        
+        predicted_sentiment = max(sentiment_scores, key=sentiment_scores.get)
+        return predicted_sentiment, sentiment_scores, {'tokens': tokens}
+
+    def validate(self, validation_data, show_samples=5):
+        print("\nValidating model...")
+        true_labels = []
+        predicted_labels = []
+        
+        for i, (_, row) in enumerate(validation_data.iterrows()):
+            true_sentiment = row['sentiment']
+            text = row['text']
+            predicted_sentiment, scores, details = self.predict(text)
+            
+            true_labels.append(true_sentiment)
+            predicted_labels.append(predicted_sentiment)
+            
+            if i < show_samples:
+                print(f"\n--- Sample {i+1} ---")
+                print(f"Text: {text[:100]}...")
+                print(f"True: {true_sentiment} | Predicted: {predicted_sentiment}")
+        
+        accuracy = accuracy_score(true_labels, predicted_labels)
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            true_labels, predicted_labels, average='weighted', zero_division=0)
+        
+        cm = confusion_matrix(true_labels, predicted_labels, 
+                             labels=['Positive', 'Negative', 'Neutral'])
+        
+        per_class_metrics = precision_recall_fscore_support(
+            true_labels, predicted_labels, 
+            labels=['Positive', 'Negative', 'Neutral'],
+            zero_division=0)
+
+        return {
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'confusion_matrix': cm,
+            'true_labels': true_labels,
+            'predicted_labels': predicted_labels,
+            'per_class_metrics': {
+                'Positive': {'precision': per_class_metrics[0][0], 'recall': per_class_metrics[1][0], 
+                            'f1': per_class_metrics[2][0], 'support': per_class_metrics[3][0]},
+                'Negative': {'precision': per_class_metrics[0][1], 'recall': per_class_metrics[1][1], 
+                            'f1': per_class_metrics[2][1], 'support': per_class_metrics[3][1]},
+                'Neutral': {'precision': per_class_metrics[0][2], 'recall': per_class_metrics[1][2], 
+                           'f1': per_class_metrics[2][2], 'support': per_class_metrics[3][2]}
+            }
+        }
+    
+    def plot_confusion_matrix(self, cm):
+        plt.figure(figsize=(10, 7))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                   xticklabels=['Positive', 'Negative', 'Neutral'],
+                   yticklabels=['Positive', 'Negative', 'Neutral'])
+        plt.title('Confusion Matrix', fontsize=16, fontweight='bold')
+        plt.ylabel('Actual', fontsize=12)
+        plt.xlabel('Predicted', fontsize=12)
+        plt.tight_layout()
+        plt.show()
+
+print("✓ Model class defined!")
+
+# STEP 5: Load Data
+# ============================================================================
+print("\n" + "="*80)
+print("LOADING DATA")
+print("="*80)
+
+train_df = pd.read_csv('twitter_training.csv')
+val_df = pd.read_csv('twitter_validation.csv')
+
+# Preprocess
+train_df = train_df.iloc[:, 2:]
+val_df = val_df.iloc[:, 2:]
+train_df.columns = ['sentiment', 'text']
+val_df.columns = ['sentiment', 'text']
+
+train_df['text'] = train_df['text'].astype(str).replace('nan', '')
+val_df['text'] = val_df['text'].astype(str).replace('nan', '')
+
+train_df = train_df[train_df['text'].str.strip() != '']
+val_df = val_df[val_df['text'].str.strip() != '']
+
+valid_sentiments = ['Positive', 'Negative', 'Neutral']
+train_df = train_df[train_df['sentiment'].isin(valid_sentiments)]
+val_df = val_df[val_df['sentiment'].isin(valid_sentiments)]
+
+print(f"\n✓ Training samples: {len(train_df)}")
+print(f"✓ Validation samples: {len(val_df)}")
+print(f"\nTraining distribution:\n{train_df['sentiment'].value_counts()}")
+
+# STEP 6: Train Model
+# ============================================================================
+print("\n" + "="*80)
+print("TRAINING MODEL")
+print("="*80)
+
+model = SentimentAnalysisModel(use_bigrams=True, min_word_freq=2)
+model.train(train_df)
+
+# STEP 7: Validate
+# ============================================================================
+print("\n" + "="*80)
+print("VALIDATION")
+print("="*80)
+
+results = model.validate(val_df, show_samples=5)
+
+print("\n" + "="*80)
+print("RESULTS")
+print("="*80)
+print(f"\n📊 Accuracy: {results['accuracy']:.4f} ({results['accuracy']*100:.2f}%)")
+print(f"📊 Precision: {results['precision']:.4f}")
+print(f"📊 Recall: {results['recall']:.4f}")
+print(f"📊 F1-Score: {results['f1_score']:.4f}")
+
+print("\n" + "-"*80)
+print(f"{'Sentiment':<15} {'Precision':<12} {'Recall':<12} {'F1':<12} {'Support':<10}")
+print("-"*80)
+for sentiment in ['Positive', 'Negative', 'Neutral']:
+    m = results['per_class_metrics'][sentiment]
+    print(f"{sentiment:<15} {m['precision']:<12.4f} {m['recall']:<12.4f} {m['f1']:<12.4f} {m['support']:<10}")
+print("-"*80)
+
+# STEP 8: Visualize
+# ============================================================================
+print("\n" + "="*80)
+print("CONFUSION MATRIX")
+print("="*80)
+model.plot_confusion_matrix(results['confusion_matrix'])
+
+# STEP 9: Test Custom Examples
+# ============================================================================
+print("\n" + "="*80)
+print("TESTING CUSTOM EXAMPLES")
+print("="*80)
+
+test_tweets = [
+    "I love this product! It's amazing!",
+    "This is terrible. Worst ever.",
+    "It's okay, nothing special.",
+    "Super happy and excited!",
+    "Very disappointed and frustrated."
+]
+
+for tweet in test_tweets:
+    pred, scores, _ = model.predict(tweet)
+    print(f"\n'{tweet}'")
+    print(f"→ {pred}")
+
+print("\n" + "="*80)
+print("✓ COMPLETE! Your model is ready to use.")
+print("="*80)
