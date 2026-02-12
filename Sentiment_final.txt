@@ -1,0 +1,441 @@
+import math
+import pandas as pd
+import numpy as np
+import nltk
+from collections import defaultdict
+from nltk.tokenize import word_tokenize
+from nltk.stem import PorterStemmer
+from nltk.corpus import stopwords
+import re
+
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix, classification_report
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Download required NLTK data
+try:
+    nltk.download('punkt_tab', quiet=True)
+except:
+    pass
+nltk.download('punkt', quiet=True)
+nltk.download('stopwords', quiet=True)
+
+
+class SentimentAnalysisModel:
+    def __init__(self, use_bigrams=True, min_word_freq=2):
+        """
+        Enhanced Naive Bayes Sentiment Analysis Model
+        
+        Args:
+            use_bigrams: Whether to include bigrams in features
+            min_word_freq: Minimum frequency for a word to be included
+        """
+        self.log_likelihood_positive = {}
+        self.log_likelihood_negative = {}
+        self.log_likelihood_neutral = {}
+        self.log_prior_positive = 0
+        self.log_prior_negative = 0
+        self.log_prior_neutral = 0
+        self.stemmer = PorterStemmer()
+        self.stopwords = set(stopwords.words("english"))
+        self.use_bigrams = use_bigrams
+        self.min_word_freq = min_word_freq
+        self.vocabulary = set()
+
+    def preprocess_text(self, text):
+        """Enhanced text preprocessing"""
+        if not isinstance(text, str):
+            return ""
+        
+        # Convert to lowercase
+        text = text.lower()
+        
+        # Remove URLs
+        text = re.sub(r'http\S+|www\S+|https\S+', '', text)
+        
+        # Remove user mentions
+        text = re.sub(r'@\w+', '', text)
+        
+        # Remove hashtags (keep the text)
+        text = re.sub(r'#', '', text)
+        
+        # Handle negations - important for sentiment
+        text = re.sub(r"n't", " not", text)
+        
+        # Remove special characters but keep some punctuation
+        text = re.sub(r'[^\w\s!?]', ' ', text)
+        
+        # Handle repeated characters (e.g., "sooooo" -> "soo")
+        text = re.sub(r'(.)\1{2,}', r'\1\1', text)
+        
+        return text
+
+    def tokenize(self, text):
+        """Tokenize and prepare text with enhanced features"""
+        if not isinstance(text, str):
+            return []
+        
+        text = self.preprocess_text(text)
+        tokens = word_tokenize(text)
+        
+        # Enhanced tokenization
+        processed_tokens = []
+        for i, token in enumerate(tokens):
+            # Keep important words even if they're stopwords
+            if token in ['not', 'no', 'never', 'neither', 'nobody', 'nothing']:
+                processed_tokens.append(token)
+            elif token not in self.stopwords and len(token) > 1:
+                # Stem the token
+                stemmed = self.stemmer.stem(token)
+                processed_tokens.append(stemmed)
+        
+        # Add bigrams if enabled
+        if self.use_bigrams and len(processed_tokens) > 1:
+            bigrams = [f"{processed_tokens[i]}_{processed_tokens[i+1]}" 
+                      for i in range(len(processed_tokens)-1)]
+            processed_tokens.extend(bigrams)
+        
+        return processed_tokens
+
+    def build_vocabulary(self, training_data):
+        """Build vocabulary from training data"""
+        word_freq = defaultdict(int)
+        
+        for _, row in training_data.iterrows():
+            tokens = self.tokenize(row['text'])
+            for token in tokens:
+                word_freq[token] += 1
+        
+        # Keep only words that appear at least min_word_freq times
+        self.vocabulary = {word for word, freq in word_freq.items() 
+                          if freq >= self.min_word_freq}
+
+    def train(self, training_data):
+        """Train the model with enhanced features"""
+        print("Building vocabulary...")
+        self.build_vocabulary(training_data)
+        print(f"Vocabulary size: {len(self.vocabulary)}")
+        
+        word_count_positive = defaultdict(int)
+        word_count_negative = defaultdict(int)
+        word_count_neutral = defaultdict(int)
+
+        print("Training model...")
+        for _, row in training_data.iterrows():
+            sentiment = row['sentiment']
+            text = row['text']
+            tokens = self.tokenize(text)
+            
+            # Filter tokens by vocabulary
+            tokens = [t for t in tokens if t in self.vocabulary]
+            
+            if sentiment == 'Positive':
+                for token in tokens:
+                    word_count_positive[token] += 1
+            elif sentiment == 'Negative':
+                for token in tokens:
+                    word_count_negative[token] += 1
+            elif sentiment == 'Neutral':
+                for token in tokens:
+                    word_count_neutral[token] += 1
+
+        sum_p = sum(word_count_positive.values())
+        sum_n = sum(word_count_negative.values())
+        sum_neu = sum(word_count_neutral.values())
+        
+        print(f"Total positive words: {sum_p}")
+        print(f"Total negative words: {sum_n}")
+        print(f"Total neutral words: {sum_neu}")
+        
+        # Calculate log likelihoods with Laplace smoothing
+        vocab_size = len(self.vocabulary)
+        self.log_likelihood_positive = self.calculate_log_likelihood(
+            word_count_positive, sum_p, vocab_size)
+        self.log_likelihood_negative = self.calculate_log_likelihood(
+            word_count_negative, sum_n, vocab_size)
+        self.log_likelihood_neutral = self.calculate_log_likelihood(
+            word_count_neutral, sum_neu, vocab_size)
+        
+        # Calculate log priors
+        self.log_prior_positive = self.calculate_log_prior('Positive', training_data)
+        self.log_prior_negative = self.calculate_log_prior('Negative', training_data)
+        self.log_prior_neutral = self.calculate_log_prior('Neutral', training_data)
+        
+        print("Training completed!")
+
+    def calculate_log_likelihood(self, word_count, total_words, vocab_size, laplacian_smoothing=1):
+        """Calculate log likelihood with Laplace smoothing"""
+        log_likelihood = {}
+        for word in self.vocabulary:
+            count = word_count.get(word, 0)
+            log_likelihood[word] = math.log(
+                (count + laplacian_smoothing) / (total_words + laplacian_smoothing * vocab_size)
+            )
+        return log_likelihood
+
+    def calculate_log_prior(self, sentiment, data):
+        """Calculate log prior probability"""
+        count_sentiment = len(data[data['sentiment'] == sentiment])
+        total_count = len(data)
+        return math.log(count_sentiment / total_count)
+
+    def predict(self, tweet):
+        """Predict sentiment for a tweet"""
+        tokens = self.tokenize(tweet)
+        tokens = [t for t in tokens if t in self.vocabulary]
+        
+        log_score_positive = self.log_prior_positive
+        log_score_negative = self.log_prior_negative
+        log_score_neutral = self.log_prior_neutral
+        
+        for token in tokens:
+            log_score_positive += self.log_likelihood_positive.get(token, 0)
+            log_score_negative += self.log_likelihood_negative.get(token, 0)
+            log_score_neutral += self.log_likelihood_neutral.get(token, 0)
+        
+        sentiment_scores = {
+            'Positive': log_score_positive,
+            'Negative': log_score_negative,
+            'Neutral': log_score_neutral
+        }
+        
+        predicted_sentiment = max(sentiment_scores, key=sentiment_scores.get)
+        
+        return predicted_sentiment, sentiment_scores, {
+            'tokens': tokens,
+            'log_priors': {
+                'Positive': self.log_prior_positive,
+                'Negative': self.log_prior_negative,
+                'Neutral': self.log_prior_neutral
+            }
+        }
+
+    def validate(self, validation_data, show_samples=5):
+        """Validate the model"""
+        print("\nValidating model...")
+        true_labels = []
+        predicted_labels = []
+        
+        for i, (_, row) in enumerate(validation_data.iterrows()):
+            true_sentiment = row['sentiment']
+            text = row['text']
+            predicted_sentiment, scores, details = self.predict(text)
+            
+            true_labels.append(true_sentiment)
+            predicted_labels.append(predicted_sentiment)
+            
+            if i < show_samples:
+                print(f"\n--- Sample {i+1} ---")
+                print(f"Text: {text[:100]}...")
+                print(f"True sentiment: {true_sentiment}")
+                print(f"Predicted sentiment: {predicted_sentiment}")
+                print(f"Scores: {scores}")
+        
+        accuracy = accuracy_score(true_labels, predicted_labels)
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            true_labels, predicted_labels, average='weighted', zero_division=0)
+        
+        # Confusion matrix
+        cm = confusion_matrix(true_labels, predicted_labels, 
+                             labels=['Positive', 'Negative', 'Neutral'])
+        
+        # Per-class metrics
+        per_class_metrics = precision_recall_fscore_support(
+            true_labels, predicted_labels, 
+            labels=['Positive', 'Negative', 'Neutral'],
+            zero_division=0)
+
+        return {
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'confusion_matrix': cm,
+            'true_labels': true_labels,
+            'predicted_labels': predicted_labels,
+            'per_class_metrics': {
+                'Positive': {
+                    'precision': per_class_metrics[0][0], 
+                    'recall': per_class_metrics[1][0], 
+                    'f1': per_class_metrics[2][0], 
+                    'support': per_class_metrics[3][0]
+                },
+                'Negative': {
+                    'precision': per_class_metrics[0][1], 
+                    'recall': per_class_metrics[1][1], 
+                    'f1': per_class_metrics[2][1], 
+                    'support': per_class_metrics[3][1]
+                },
+                'Neutral': {
+                    'precision': per_class_metrics[0][2], 
+                    'recall': per_class_metrics[1][2], 
+                    'f1': per_class_metrics[2][2], 
+                    'support': per_class_metrics[3][2]
+                }
+            }
+        }
+    
+    def plot_confusion_matrix(self, cm, title='Confusion Matrix'):
+        """Plot confusion matrix"""
+        plt.figure(figsize=(10, 7))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                   xticklabels=['Positive', 'Negative', 'Neutral'],
+                   yticklabels=['Positive', 'Negative', 'Neutral'])
+        plt.title(title)
+        plt.ylabel('Actual')
+        plt.xlabel('Predicted')
+        plt.tight_layout()
+        plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
+        plt.show()
+        print("Confusion matrix saved as 'confusion_matrix.png'")
+
+
+def load_and_preprocess_data(train_file, val_file):
+    """Load and preprocess the data"""
+    print("Loading data...")
+    
+    # Load training data
+    train_df = pd.read_csv(train_file)
+    
+    # Load validation data
+    val_df = pd.read_csv(val_file)
+    
+    # Drop first two columns (ID and topic columns)
+    train_df = train_df.iloc[:, 2:]
+    val_df = val_df.iloc[:, 2:]
+    
+    # Rename columns
+    train_df.columns = ['sentiment', 'text']
+    val_df.columns = ['sentiment', 'text']
+    
+    # Clean text
+    train_df['text'] = train_df['text'].astype(str).replace('nan', '')
+    val_df['text'] = val_df['text'].astype(str).replace('nan', '')
+    
+    # Remove rows with empty text
+    train_df = train_df[train_df['text'].str.strip() != '']
+    val_df = val_df[val_df['text'].str.strip() != '']
+    
+    # Filter for only the three sentiments we want
+    valid_sentiments = ['Positive', 'Negative', 'Neutral']
+    train_df = train_df[train_df['sentiment'].isin(valid_sentiments)]
+    val_df = val_df[val_df['sentiment'].isin(valid_sentiments)]
+    
+    print(f"Training data: {len(train_df)} samples")
+    print(f"Validation data: {len(val_df)} samples")
+    print(f"\nTraining sentiment distribution:")
+    print(train_df['sentiment'].value_counts())
+    print(f"\nValidation sentiment distribution:")
+    print(val_df['sentiment'].value_counts())
+    
+    return train_df, val_df
+
+
+def analyze_predictions(model, data, n_samples=10):
+    """Analyze random predictions"""
+    print(f"\n{'='*80}")
+    print(f"ANALYZING {n_samples} RANDOM PREDICTIONS")
+    print(f"{'='*80}")
+    
+    for i, (_, row) in enumerate(data.sample(n=n_samples).iterrows(), 1):
+        text = row['text']
+        true_sentiment = row['sentiment']
+        predicted_sentiment, scores, details = model.predict(text)
+        
+        print(f"\n--- Sample {i} ---")
+        print(f"Text: {text[:150]}...")
+        print(f"True sentiment: {true_sentiment}")
+        print(f"Predicted sentiment: {predicted_sentiment}")
+        print(f"Correct: {'✓' if true_sentiment == predicted_sentiment else '✗'}")
+        print(f"Scores: {scores}")
+
+
+def print_detailed_metrics(validation_results):
+    """Print detailed metrics"""
+    print(f"\n{'='*80}")
+    print("DETAILED EVALUATION METRICS")
+    print(f"{'='*80}")
+    
+    print(f"\nOverall Accuracy: {validation_results['accuracy']:.4f}")
+    print(f"Overall Precision: {validation_results['precision']:.4f}")
+    print(f"Overall Recall: {validation_results['recall']:.4f}")
+    print(f"Overall F1-Score: {validation_results['f1_score']:.4f}")
+    
+    print("\nPer-Class Metrics:")
+    print("-" * 80)
+    print(f"{'Sentiment':<15} {'Precision':<12} {'Recall':<12} {'F1-Score':<12} {'Support':<10}")
+    print("-" * 80)
+    
+    for sentiment in ['Positive', 'Negative', 'Neutral']:
+        metrics = validation_results['per_class_metrics'][sentiment]
+        print(f"{sentiment:<15} {metrics['precision']:<12.4f} {metrics['recall']:<12.4f} "
+              f"{metrics['f1']:<12.4f} {metrics['support']:<10}")
+    
+    print("-" * 80)
+
+
+def main():
+    """Main function to run the sentiment analysis"""
+    print("="*80)
+    print("SENTIMENT ANALYSIS MODEL - TWITTER DATA")
+    print("="*80)
+    
+    # Load and preprocess data
+    train_df, val_df = load_and_preprocess_data('twitter_training.csv', 'twitter_validation.csv')
+    
+    # Create and train model
+    print("\n" + "="*80)
+    print("TRAINING MODEL")
+    print("="*80)
+    model = SentimentAnalysisModel(use_bigrams=True, min_word_freq=2)
+    model.train(train_df)
+    
+    # Validate model
+    print("\n" + "="*80)
+    print("VALIDATION")
+    print("="*80)
+    validation_results = model.validate(val_df, show_samples=5)
+    
+    # Print detailed metrics
+    print_detailed_metrics(validation_results)
+    
+    # Plot confusion matrix
+    print("\nGenerating confusion matrix...")
+    model.plot_confusion_matrix(validation_results['confusion_matrix'])
+    
+    # Analyze random predictions
+    analyze_predictions(model, val_df, n_samples=10)
+    
+    # Print classification report
+    print("\n" + "="*80)
+    print("SKLEARN CLASSIFICATION REPORT")
+    print("="*80)
+    print(classification_report(validation_results['true_labels'], 
+                                validation_results['predicted_labels'],
+                                labels=['Positive', 'Negative', 'Neutral'],
+                                target_names=['Positive', 'Negative', 'Neutral']))
+    
+    return model, validation_results
+
+
+if __name__ == "__main__":
+    model, results = main()
+    
+    # Test with custom examples
+    print("\n" + "="*80)
+    print("TESTING WITH CUSTOM EXAMPLES")
+    print("="*80)
+    
+    test_tweets = [
+        "I love this product! It's amazing and works perfectly!",
+        "This is terrible. Worst experience ever. I hate it.",
+        "The weather is okay today. Nothing special.",
+        "I'm so happy and excited about this news!",
+        "Disappointed and frustrated with the service."
+    ]
+    
+    for tweet in test_tweets:
+        prediction, scores, _ = model.predict(tweet)
+        print(f"\nTweet: {tweet}")
+        print(f"Predicted: {prediction}")
+        print(f"Scores: {scores}")
