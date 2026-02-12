@@ -109,106 +109,46 @@ Positive: 20,618
 Neutral: 18,051
 
 
-Mathematical Background
+Mathematical Foundation
 
-Naive Bayes Formula:
+The model is based on the Naive Bayes Theorem:
 
-𝑃
-(
-𝐶
-𝑙
-𝑎
-𝑠
-𝑠
-∣
-𝑊
-𝑜
-𝑟
-𝑑
-𝑠
-)
-∝
-𝑃
-(
-𝐶
-𝑙
-𝑎
-𝑠
-𝑠
-)
-×
-∏
-𝑃
-(
-𝑊
-𝑜
-𝑟
-𝑑
-∣
-𝐶
-𝑙
-𝑎
-𝑠
-𝑠
-)
-P(Class∣Words)∝P(Class)×∏P(Word∣Class)
+Naive Bayes Formula
+P(Class | Words) ∝ P(Class) × ∏ P(Word | Class)
 
-To avoid numerical underflow:
 
-Log probabilities are used
+This means:
 
-Laplace smoothing applied:
+P(Class | Words) → Probability of a class given the words
 
-𝑃
-(
-𝑤
-𝑜
-𝑟
-𝑑
-∣
-𝑐
-𝑙
-𝑎
-𝑠
-𝑠
-)
-=
-𝑐
-𝑜
-𝑢
-𝑛
-𝑡
-(
-𝑤
-𝑜
-𝑟
-𝑑
-)
-+
-1
-𝑡
-𝑜
-𝑡
-𝑎
-𝑙
-_
-𝑤
-𝑜
-𝑟
-𝑑
-𝑠
-+
-𝑉
-P(word∣class)=
-total_words+V
-count(word)+1
-	​
+P(Class) → Prior probability of the class
+
+P(Word | Class) → Likelihood of each word given the class
+
+The product (∏) multiplies probabilities of all words
+
+Log Probability Version (Used in Code)
+
+To prevent numerical underflow, we use log probabilities:
+
+log P(Class | Words) = log P(Class) + Σ log P(Word | Class)
+
+Laplace Smoothing
+
+To avoid zero probabilities:
+
+P(word | class) = (count(word) + 1) / (total_words + V)
 
 
 Where:
 
-V = Vocabulary size
+count(word) → Number of times the word appears in that class
 
+total_words → Total words in that class
+
+V → Vocabulary size
+
++1 → Laplace smoothing
 🏆 Highlights
 
 ✔ 96.26% Accuracy
