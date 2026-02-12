@@ -1,4 +1,4 @@
-🧠 Twitter Sentiment Analysis (Naive Bayes From Scratch)
+# Twitter Sentiment Analysis (Naive Bayes From Scratch)
 
 A multiclass Sentiment Analysis model built completely from scratch using the Naive Bayes algorithm in Python.
 
@@ -10,7 +10,8 @@ The model classifies tweets into:
 
 ➖ Neutral
 
-📊 Final Model Performance
+
+# 📊 Final Model Performance
 
 Validation Results:
 
